@@ -1,26 +1,19 @@
 import os
-from flask import Flask
 import telebot
 
+# Получаем токен из переменных окружения Render
 TOKEN = os.getenv('BOT_TOKEN')
+
+# Проверка, что токен вообще подгрузился
+if not TOKEN:
+    raise ValueError("Не задан BOT_TOKEN в переменных окружения!")
+
 bot = telebot.TeleBot(TOKEN)
 
-# Простой сервер, чтобы Render не усыплял бота
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bitbotv is alive and running!"
-
-def run_web():
-    app.run(host='0.0.0.0', port=10000)
-
 @bot.message_handler(commands=['start'])
-def start_message(message):
-    bot.reply_to(message, "Привет, Васиф! Бот успешно запущен на Render и готов к работе 🚀")
+def send_welcome(message):
+    bot.reply_to(message, "Привет! Бот успешно запущен и работает! 🚀")
 
 if __name__ == '__main__':
-    import threading
-    t = threading.Thread(target=run_web)
-    t.start()
+    print("Бот запущен и ожидает сообщения...")
     bot.infinity_polling()
