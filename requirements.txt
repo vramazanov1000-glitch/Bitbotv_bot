@@ -1,4 +1,2 @@
 pyTelegramBotAPI
-openai
 requests
-matplotlib
