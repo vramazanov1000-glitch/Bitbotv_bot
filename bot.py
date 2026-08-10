@@ -294,7 +294,7 @@ def handle_callback(call):
                 reply_markup=markup
             )
     except Exception as e:
-    print(f"Ошибка в callback: {e}")
+        print(f"Ошибка в callback: {e}")
 
 if __name__ == '__main__':
     print("Бот успешно запущен и готов к работе...")
