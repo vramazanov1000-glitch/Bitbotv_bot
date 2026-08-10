@@ -4,7 +4,7 @@ from flask import Flask, request, abort
 import requests
 from openai import OpenAI
 
-TOKEN = os.getenv('TELEGRAM_TOKEN', '8890656649:AAFKuBm1FwvArvspXdehC_ziUKiSA9kPnzk')
+TOKEN = '8890656649:AAFKuBm1FwvArvspXdehC_ziUKiSA9kPnzk'
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 RENDER_EXTERNAL_URL = os.getenv('RENDER_EXTERNAL_URL')
 
@@ -13,13 +13,14 @@ app = Flask(__name__)
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 def get_bitget_rsi(symbol="BICOUSDT"):
-    """Получение RSI(14) с биржи Bitget для выбранной монеты"""
+    """Надежное получение RSI(14) с биржи Bitget (spot candles)"""
     try:
         url = f"https://api.bitget.com/api/v2/spot/market/candles?symbol={symbol.upper()}&granularity=1H&limit=50"
         response = requests.get(url, timeout=5)
         data = response.json()
 
         if data.get("code") == "00000" and data.get("data"):
+            # Bitget отдает свечи: [time, open, high, low, close, volume, ...]
             closes = [float(candle[4]) for candle in data["data"]]
             if len(closes) >= 15:
                 gains, losses = [], []
@@ -38,11 +39,11 @@ def get_bitget_rsi(symbol="BICOUSDT"):
                 return round(rsi, 2)
         return None
     except Exception as e:
-        print(f"Ошибка API Bitget для {symbol}: {e}")
+        print(f"Ошибка при запросе к Bitget API для {symbol}: {e}")
         return None
 
 def generate_crypto_analysis(symbol, rsi):
-    """Генерация текста анализа"""
+    """Генерация структурированного отчета и подключение OpenAI"""
     clean_symbol = symbol.upper().replace("USDT", "") + "/USDT"
 
     if rsi is None:
@@ -64,26 +65,24 @@ def generate_crypto_analysis(symbol, rsi):
     ai_comment = "Индикатор отражает текущий баланс сил покупателей и продавцов на спотовом рынке."
     if client:
         try:
-            prompt = f"Напиши краткий рыночный комментарий для криптопары {clean_symbol}, текущий RSI(14) = {rsi}."
+            prompt = f"Напиши краткий аналитический комментарий для криптопары {clean_symbol}, текущий RSI(14) = {rsi}."
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=100
             )
             ai_comment = response.choices[0].message.content.strip()
-        except Exception:
-            pass
+        except Exception as ai_err:
+            print(f"Ошибка OpenAI API: {ai_err}")
 
-    text = (
+    return (
         f"📊 **Анализ рынка: {clean_symbol} (1h)**\n\n"
         f"🟢 **Текущий RSI(14):** `{rsi}`\n"
         f"📈 **Состояние:** {trend}\n"
         f"🎯 **Вероятность:** {probability}\n\n"
         f"💡 *Комментарий:* {ai_comment}"
     )
-    return text
 
-# 1. Приветствие и команда /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = telebot.types.InlineKeyboardMarkup()
@@ -91,13 +90,12 @@ def send_welcome(message):
     markup.add(btn)
     bot.reply_to(
         message, 
-        f"Привет, Васиф! 🤝 Бот полностью готов к работе.\n\n"
-        f"• Нажми кнопку для анализа **BICO/USDT**\n"
-        f"• Или напиши любой тикер (например: `BTC`, `ETH`, `SOL`), чтобы посчитать его RSI!", 
+        f"Привет, Васиф! 🤝 Бот запущен и полностью готов к работе.\n\n"
+        f"• Нажми кнопку для быстрого анализа **BICO/USDT**\n"
+        f"• Или просто отправь любой тикер (например: `BTC`, `ETH`, `SOL`), чтобы посчитать RSI!", 
         reply_markup=markup
     )
 
-# 2. Обработка нажатия на инлайн-кнопку
 @bot.callback_query_handler(func=lambda call: call.data == "analyze_bico")
 def callback_analyze(call):
     try:
@@ -112,7 +110,6 @@ def callback_analyze(call):
         print(f"Ошибка в callback: {e}")
         bot.send_message(call.message.chat.id, "⚠️ Ошибка при обработке запроса.")
 
-# 3. Обработка текстовых тикеров (исключая команды со слешем)
 @bot.message_handler(func=lambda message: message.text and not message.text.startswith('/'))
 def handle_text_coin(message):
     text_input = message.text.strip().upper()
@@ -146,7 +143,7 @@ def webhook():
 
 @app.route('/')
 def index():
-    return "Bot is running via Webhooks!", 200
+    return "Bot is running via Webhooks smoothly!", 200
 
 if __name__ == "__main__":
     if RENDER_EXTERNAL_URL:
@@ -155,5 +152,5 @@ if __name__ == "__main__":
         bot.set_webhook(url=webhook_url)
         print(f"Вебхук установлен на: {webhook_url}")
 
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
