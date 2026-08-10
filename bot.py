@@ -1,10 +1,11 @@
 import os
+import time
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from telebot import types
 
-# === МИНИ-СЕРВЕР ДЛЯ RENDER (чтобы не было ошибки No open ports detected) ===
+# === МИНИ-СЕРВЕР ДЛЯ RENDER (чтобы занимать порт и не было ошибки No open ports) ===
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -17,7 +18,7 @@ def run_server():
     server = HTTPServer(("0.0.0.0", port), SimpleHandler)
     server.serve_forever()
 
-# Запускаем сервер в фоновом потоке
+# Запускаем фоновый HTTP-сервер
 threading.Thread(target=run_server, daemon=True).start()
 
 # === ИНИЦИАЛИЗАЦИЯ БОТА ===
@@ -25,9 +26,12 @@ TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("Не задан BOT_TOKEN в переменных окружения!")
 
+# Небольшая пауза, чтобы Render успел полностью убить старый инстанс процесса
+time.sleep(3)
+
 bot = telebot.TeleBot(TOKEN)
 
-# Принудительно сбрасываем старые соединения (лечит ошибку 409 Conflict)
+# Сбрасываем старый вебхук / зависшие сессии
 try:
     bot.remove_webhook()
 except Exception:
@@ -71,5 +75,6 @@ def callback_inline(call):
     bot.send_message(chat_id, response_text, parse_mode="Markdown")
 
 if __name__ == "__main__":
-    print("Бот запущен...")
-    bot.infinity_polling()
+    print("Бот запущен и готов к работе...")
+    # timeout и interval снижают шанс словить конфликт при кратковряменных обрывах связи
+    bot.infinity_polling(timeout=20, long_polling_timeout=5)
