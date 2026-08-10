@@ -13,6 +13,7 @@ app = Flask(__name__)
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 def get_bitget_rsi(symbol="BICOUSDT"):
+    """Получение RSI(14) с биржи Bitget для выбранной монеты"""
     try:
         url = f"https://api.bitget.com/api/v2/spot/market/candles?symbol={symbol.upper()}&granularity=1H&limit=50"
         response = requests.get(url, timeout=5)
@@ -41,6 +42,7 @@ def get_bitget_rsi(symbol="BICOUSDT"):
         return None
 
 def generate_crypto_analysis(symbol, rsi):
+    """Генерация текста анализа"""
     clean_symbol = symbol.upper().replace("USDT", "") + "/USDT"
 
     if rsi is None:
@@ -81,7 +83,7 @@ def generate_crypto_analysis(symbol, rsi):
     )
     return text
 
-# 1. Сначала обрабатываем команду /start (высший приоритет)
+# 1. Приветствие и команда /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = telebot.types.InlineKeyboardMarkup()
@@ -95,7 +97,7 @@ def send_welcome(message):
         reply_markup=markup
     )
 
-# 2. Обработка инлайн-кнопки
+# 2. Обработка нажатия на инлайн-кнопку
 @bot.callback_query_handler(func=lambda call: call.data == "analyze_bico")
 def callback_analyze(call):
     try:
@@ -110,7 +112,7 @@ def callback_analyze(call):
         print(f"Ошибка в callback: {e}")
         bot.send_message(call.message.chat.id, "⚠️ Ошибка при обработке запроса.")
 
-# 3. Обработка обычного текста (только если это не команда со слешем)
+# 3. Обработка текстовых тикеров (исключая команды со слешем)
 @bot.message_handler(func=lambda message: message.text and not message.text.startswith('/'))
 def handle_text_coin(message):
     text_input = message.text.strip().upper()
