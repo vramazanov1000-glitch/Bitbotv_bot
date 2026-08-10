@@ -13,7 +13,7 @@ app = Flask(__name__)
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 def get_bitget_rsi(symbol="BICOUSDT"):
-    """Универсальная функция для получения RSI(14) с биржи Bitget для любой монеты"""
+    """Получение RSI(14) с биржи Bitget для выбранной монеты"""
     try:
         url = f"https://api.bitget.com/api/v2/spot/market/candles?symbol={symbol.upper()}&granularity=1H&limit=50"
         response = requests.get(url, timeout=5)
@@ -42,17 +42,15 @@ def get_bitget_rsi(symbol="BICOUSDT"):
         return None
 
 def generate_crypto_analysis(symbol, rsi):
-    """Генерация аналитики с помощью OpenAI (если ключ настроен) или возврат стандартного шаблона"""
+    """Генерация текста анализа"""
     clean_symbol = symbol.upper().replace("USDT", "") + "/USDT"
 
-    # Если RSI не удалось получить
     if rsi is None:
         return (
             f"📊 **Анализ пары: {clean_symbol} (1h)**\n\n"
-            "⚠️ Не удалось получить данные с биржи Bitget. Возможно, монета указана неверно или отсутствует на споте."
+            "⚠️ Не удалось получить данные с биржи Bitget. Проверь правильность тикера."
         )
 
-    # Простейшая логика тренда на основе RSI для примера
     if rsi > 70:
         trend = "ПЕРЕКУПЛЕННОСТЬ (Возможна коррекция вниз 📉)"
         probability = "64%"
@@ -63,26 +61,24 @@ def generate_crypto_analysis(symbol, rsi):
         trend = "УМЕРЕННЫЙ ТРЕНД (Боковое движение ⚖️)"
         probability = "55%"
 
-    # Если подключена OpenAI, можно сделать текст умнее
+    ai_comment = "Индикатор отражает текущий баланс сил покупателей и продавцов на спотовом рынке."
     if client:
         try:
-            prompt = f"Напиши короткий рыночный комментарий для криптопары {clean_symbol}, текущий RSI(14) = {rsi}. Тренд: {trend}."
+            prompt = f"Напиши краткий рыночный комментарий для криптопары {clean_symbol}, текущий RSI(14) = {rsi}."
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=150
-            ]
+                max_tokens=100
+            )
             ai_comment = response.choices[0].message.content.strip()
         except Exception:
-            ai_comment = "Индикатор находится в рабочем диапазоне, следите за уровнями поддержки."
-    else:
-        ai_comment = "Индикатор отражает текущий баланс сил покупателей и продавцов на рынке."
+            pass
 
     text = (
         f"📊 **Анализ рынка: {clean_symbol} (1h)**\n\n"
         f"🟢 **Текущий RSI(14):** `{rsi}`\n"
         f"📈 **Состояние:** {trend}\n"
-        f"🎯 **Вероятность сценария:** {probability}\n\n"
+        f"🎯 **Вероятность:** {probability}\n\n"
         f"💡 *Комментарий:* {ai_comment}"
     )
     return text
@@ -94,9 +90,9 @@ def send_welcome(message):
     markup.add(btn)
     bot.reply_to(
         message, 
-        f"Привет, Васиф! 🤝 Я твой бот для анализа крипты.\n\n"
-        f"• Нажми кнопку ниже для быстрого анализа **BICO/USDT**\n"
-        f"• Или просто отправь мне тикер любой монеты (например: `BTC`, `ETH`, `SOL`), и я посчитаю ее RSI!", 
+        f"Привет, Васиф! 🤝 Бот готов к работе.\n\n"
+        f"• Нажми кнопку для анализа **BICO/USDT**\n"
+        f"• Или напиши любой тикер (например: `BTC`, `ETH`, `SOL`), чтобы посчитать его RSI!", 
         reply_markup=markup
     )
 
@@ -116,15 +112,14 @@ def callback_analyze(call):
 
 @bot.message_handler(func=lambda message: True)
 def handle_text_coin(message):
-    """Обработка любых текстовых сообщений как запросов тикера монеты"""
     text_input = message.text.strip().upper()
+    coin_name = text_input.replace("/", "").replace("USDT", "")
 
-рень = text_input.replace("/", "").replace("USDT", "")
-    if not arein or len(arein) > 10:
+    if not coin_name or len(coin_name) > 10:
         bot.reply_to(message, "Пожалуйста, укажи корректный тикер монеты, например: `BTC`, `ETH`, `SOL`", parse_mode="Markdown")
         return
 
-    symbol = arein + "USDT"
+    symbol = coin_name + "USDT"
 
     try:
         msg = bot.reply_to(message, f"⏳ Запрашиваю свечи и считаю RSI для {symbol}...")
@@ -134,7 +129,7 @@ def handle_text_coin(message):
         bot.edit_message_text(analysis_text, chat_id=message.chat.id, message_id=msg.message_id, parse_mode="Markdown")
     except Exception as e:
         print(f"Ошибка при обработке монеты {symbol}: {e}")
-        bot.reply_to(message, f"⚠️ Не удалось обработать монету {symbol}. Проверь правильность названия.")
+        bot.reply_to(message, f"⚠️ Не удалось обработать монету {symbol}. Проверь название.")
 
 @app.route(f'/{TOKEN}', methods=['POST'])
 def webhook():
