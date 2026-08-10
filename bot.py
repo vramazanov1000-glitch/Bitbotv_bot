@@ -48,6 +48,22 @@ def calculate_rsi(prices, period=14):
             rsi[i] = 100 - (100 / (1 + rs))
     return rsi
 
+def analyze_market_overheat(funding_rate, long_short_ratio):
+    """
+    Оценивает степень перегрева рынка на основе фандинга и лонг/шорт ратио.
+    """
+    overheat_status = "⚖️ Баланс сил в рынке"
+    warning_note = "Явных перекосов и критических зон толпы нет."
+
+    if funding_rate > 0.01 and long_short_ratio > 1.5:
+        overheat_status = "🔥 Перегрет в ЛОНГ (Толпа перегружена лонгами)"
+        warning_note = "Высок риск длинного сквиза (Long Squeeze) при резком проливе вниз."
+    elif funding_rate < -0.01 and long_short_ratio < 0.7:
+        overheat_status = "❄️ Перегрет в ШОРТ (Толпа перегружена шортами)"
+        warning_note = "Высок риск шорт-сквиза (Short Squeeze) при импульсном выносе вверх."
+
+    return overheat_status, warning_note
+
 def get_market_metrics(symbol, granularity="15m"):
     """Сбор метрик, данных толпы и расчет RSI с Bitget"""
     metrics = {
@@ -135,9 +151,11 @@ def generate_chart(display_name, raw_candles, granularity_label):
     return None
 
 def get_ai_risk_analysis(symbol, m, tf_label):
-    """ИИ-аналитик с учетом RSI, сентимента и таймфрейма"""
+    """ИИ-аналитик с учетом RSI, сентимента, таймфрейма и оценки перегрева"""
     if not ai_client:
         return "⚠️ Не задан OPENAI_API_KEY в переменных окружения Render."
+
+    status, note = analyze_market_overheat(m['funding_rate'], m['ratio'])
 
     prompt = (
         f"Ты — профессиональный трейдер, аналитик Smart Money и жесткий риск-менеджер. "
@@ -145,10 +163,12 @@ def get_ai_risk_analysis(symbol, m, tf_label):
         f"- Long/Short Ratio (настроение толпы): {m['ratio']:.2f} (Лонги: {m['long_ratio']:.1f}%, Шорты: {m['short_ratio']:.1f}%)\n"
         f"- Funding Rate (ставка финансирования): {m['funding_rate']:.4f}%\n"
         f"- Open Interest (открытый интерес): {m['open_interest']}\n"
-        f"- RSI (14): {m['rsi']:.1f} (Зоны: >70 перекуплен, <30 перепродан)\n\n"
+        f"- RSI (14): {m['rsi']:.1f} (Зоны: >70 перекуплен, <30 перепродан)\n"
+        f"- Статус перегрева рынка: {status}\n"
+        f"- Примечание по рискам: {note}\n\n"
         f"Дай краткий, холодный вердикт:\n"
         f"1. Прогноз направления цены на дистанции таймфрейма ({tf_label}). Обязательно начни этот пункт с одной из стрелок: 📈 [Вверх / Лонг-сквиз], 📉 [Вниз / Шорт-сквиз] или ⚖️ [Флэт/Ожидание].\n"
-        f"2. Учёт RSI и риск сквиза толпы.\n"
+        f"2. Учёт RSI, статуса перегрева и риска сквиза толпы.\n"
         f"3. Четкая рекомендация по сделке.\n"
         f"Пиши структурированно, без воды."
     )
@@ -180,9 +200,9 @@ def get_keyboard(display_name, current_gran="15m", current_label="15 минут"
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     text = (
-        f"Привет, Васиф! 🚀 Терминал с RSI и кнопкой мгновенного обновления запущен.\n\n"
-        "📊 <i>Метрики + График + RSI + Кнопка обновления в 1 клик.</i>\n\n"
-        "Отправь тикер монеты (например: <b>BTC</b>, <b>TRX</b>, <b>ETH</b>), чтобы начать!"
+        f"Привет, Васиф! 🚀 Терминал с RSI, анализом перегрева толпы и кнопкой обновления запущен.\n\n"
+        "📊 Метрики + График + RSI + Статус перегрева + Кнопка обновления в 1 клик.\n\n"
+        "Отправь тикер монеты (например: BTC, TRX, ETH), чтобы начать!"
     )
     bot.send_message(message.chat.id, text, parse_mode="HTML")
 
@@ -191,11 +211,10 @@ def handle_crypto_text(message):
     query = message.text.strip().upper()
     if not query:
         return
-
     symbol = query + "USDT" if not query.endswith("USDT") else query
     display_name = symbol.replace("USDT", "")
 
-    status_msg = bot.send_message(message.chat.id, f"🔍 Сканирую рынок и рассчитываю RSI по <b>{display_name}</b>...", parse_mode="HTML")
+    status_msg = bot.send_message(message.chat.id, f"🔍 Сканирую рынок, считаю RSI и оцениваю перегрев по {display_name}...", parse_mode="HTML")
 
     granularity, tf_label = "15m", "15 минут"
     m = get_market_metrics(symbol, granularity)
@@ -204,7 +223,7 @@ def handle_crypto_text(message):
         bot.edit_message_text(
             chat_id=message.chat.id,
             message_id=status_msg.message_id,
-            text=f"⚠️ Фьючерс <b>{symbol}</b> не найден на бирже Bitget. Проверь правильность тикера.",
+            text=f"⚠️ Фьючерс {symbol} не найден на бирже Bitget. Проверь правильность тикера.",
             parse_mode="HTML"
         )
         return
@@ -212,16 +231,19 @@ def handle_crypto_text(message):
     ai_verdict = get_ai_risk_analysis(display_name, m, tf_label)
     chart_buf = generate_chart(display_name, m['raw_candles'], tf_label)
 
+    status, _ = analyze_market_overheat(m['funding_rate'], m['ratio'])
+
     text = (
-        f"📊 <b>Терминал: {display_name}/USDT</b> | ⏱ <b>ТФ: {tf_label}</b>\n\n"
-        f"👥 <b>Сентимент (L/S Ratio):</b>\n"
-        f"🟢 Лонги: <b>{m['long_ratio']:.1f}%</b> | 🔴 Шорты: <b>{m['short_ratio']:.1f}%</b>\n"
-        f"⚖️ Коэффициент: <b>{m['ratio']:.2f}</b>\n\n"
-        f"⚡ <b>Метрики & Индикаторы:</b>\n"
-        f"• Funding: <code>{m['funding_rate']:.4f}%</code>\n"
-        f"• Open Interest: <code>{m['open_interest']}</code>\n"
-        f"• RSI (14): <b>{m['rsi']:.1f}</b>\n\n"
-        f"🤖 <b>ИИ-прогноз и анализ:</b>\n{ai_verdict}"
+        f"📊 Терминал: {display_name}/USDT | ⏱ ТФ: {tf_label}\n\n"
+        f"👥 Сентимент (L/S Ratio):\n"
+        f"🟢 Лонги: {m['long_ratio']:.1f}% | 🔴 Шорты: {m['short_ratio']:.1f}%\n"
+        f"⚖️ Коэффициент: {m['ratio']:.2f}\n\n"
+        f"⚡ Метрики & Индикаторы:\n"
+        f"• Funding: {m['funding_rate']:.4f}%\n"
+        f"• Open Interest: {m['open_interest']}\n"
+        f"• RSI (14): {m['rsi']:.1f}\n"
+        f"• Статус: {status}\n\n"
+        f"🤖 ИИ-прогноз и анализ:\n{ai_verdict}"
     )
 
     try:
@@ -243,7 +265,6 @@ def handle_callback(call):
         display_name = parts[1]
         granularity = parts[2]
         tf_label = parts[3]
-
         symbol = display_name + "USDT"
 
         if action == "ref":
@@ -255,16 +276,19 @@ def handle_callback(call):
         ai_verdict = get_ai_risk_analysis(display_name, m, tf_label)
         chart_buf = generate_chart(display_name, m['raw_candles'], tf_label)
 
+        status, _ = analyze_market_overheat(m['funding_rate'], m['ratio'])
+
         text = (
-            f"📊 <b>Терминал: {display_name}/USDT</b> | ⏱ <b>ТФ: {tf_label}</b>\n\n"
-            f"👥 <b>Сентимент (L/S Ratio):</b>\n"
-            f"🟢 Лонги: <b>{m['long_ratio']:.1f}%</b> | 🔴 Шорты: <b>{m['short_ratio']:.1f}%</b>\n"
-            f"⚖️ Коэффициент: <b>{m['ratio']:.2f}</b>\n\n"
-            f"⚡ <b>Метрики & Индикаторы:</b>\n"
-            f"• Funding: <code>{m['funding_rate']:.4f}%</code>\n"
-            f"• Open Interest: <code>{m['open_interest']}</code>\n"
-            f"• RSI (14): <b>{m['rsi']:.1f}</b>\n\n"
-            f"🤖 <b>ИИ-прогноз и анализ:</b>\n{ai_verdict}"
+            f"📊 Терминал: {display_name}/USDT | ⏱ ТФ: {tf_label}\n\n"
+            f"👥 Сентимент (L/S Ratio):\n"
+            f"🟢 Лонги: {m['long_ratio']:.1f}% | 🔴 Шорты: {m['short_ratio']:.1f}%\n"
+            f"⚖️ Коэффициент: {m['ratio']:.2f}\n\n"
+            f"⚡ Метрики & Индикаторы:\n"
+            f"• Funding: {m['funding_rate']:.4f}%\n"
+            f"• Open Interest: {m['open_interest']}\n"
+            f"• RSI (14): {m['rsi']:.1f}\n"
+            f"• Статус: {status}\n\n"
+            f"🤖 ИИ-прогноз и анализ:\n{ai_verdict}"
         )
 
         markup = get_keyboard(display_name, granularity, tf_label)
