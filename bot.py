@@ -27,6 +27,12 @@ if not TOKEN:
 
 bot = telebot.TeleBot(TOKEN)
 
+# Принудительно сбрасываем старые соединения (лечит ошибку 409 Conflict)
+try:
+    bot.remove_webhook()
+except Exception:
+    pass
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = types.InlineKeyboardMarkup()
@@ -43,7 +49,6 @@ def send_welcome(message):
 def callback_inline(call):
     chat_id = call.message.chat.id
 
-    # Удаляем инлайн-кнопку, чтобы не спамили
     try:
         bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
     except Exception:
@@ -51,12 +56,10 @@ def callback_inline(call):
 
     bot.send_message(chat_id, "⏳ Получаю данные с рынка и генерирую анализ...")
 
-    # Пример данных (здесь подставляются твои значения из API Bitget / OpenAI)
     current_price = "0.1425 USDT"
     trend_arrow = "🟢 РАСТЕТ (📈 Вверх)"
     probability = "78%"
 
-    # Текст сообщения без блока «Метрики & Индикаторы», но с ценой и прогнозом
     response_text = (
         "📊 **Анализ фьючерсов: BICO/USDT** (15m)\n\n"
         f"💵 **Текущая цена:** `{current_price}`\n\n"
@@ -65,8 +68,6 @@ def callback_inline(call):
         "💡 *Индикатор RSI(14) находится в нейтральной зоне, наблюдается давление покупателей.*"
     )
 
-    # Имитация отправки графика (здесь может быть путь к твоей картинке RSI)
-    # Если картинки нет, можно отправить просто текст:
     bot.send_message(chat_id, response_text, parse_mode="Markdown")
 
 if __name__ == "__main__":
