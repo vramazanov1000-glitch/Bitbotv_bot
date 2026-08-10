@@ -1,46 +1,34 @@
 import os
-import time
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
-from telebot import types
+from flask import Flask, request
 
-# === МИНИ-СЕРВЕР ДЛЯ RENDER (чтобы занимать порт и не было ошибки No open ports) ===
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"Bot is running!")
-
-def run_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
-    server.serve_forever()
-
-# Запускаем фоновый HTTP-сервер
-threading.Thread(target=run_server, daemon=True).start()
-
-# === ИНИЦИАЛИЗАЦИЯ БОТА ===
 TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("Не задан BOT_TOKEN в переменных окружения!")
 
-# Небольшая пауза, чтобы Render успел полностью убить старый инстанс процесса
-time.sleep(3)
-
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
-# Сбрасываем старый вебхук / зависшие сессии
-try:
-    bot.remove_webhook()
-except Exception:
-    pass
+# Веб-хук для приема запросов от Telegram
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    if request.headers.get("content-type") == "application/json":
+        json_string = request.get_data().decode("utf-8")
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return "!", 200
+    else:
+        return "Invalid content-type", 403
+
+# Простой эндпоинт для проверки работы сервиса на Render
+@app.route("/", methods=["GET"])
+def index():
+    return "Bot is running via Webhooks!", 200
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    markup = types.InlineKeyboardMarkup()
-    btn = types.InlineKeyboardButton("📊 Анализ BICO/USDT", callback_data="analyze_bico")
+    markup = telebot.types.InlineKeyboardMarkup()
+    btn = telebot.types.InlineKeyboardButton("📊 Анализ BICO/USDT", callback_data="analyze_bico")
     markup.add(btn)
 
     bot.send_message(
@@ -75,6 +63,11 @@ def callback_inline(call):
     bot.send_message(chat_id, response_text, parse_mode="Markdown")
 
 if __name__ == "__main__":
-    print("Бот запущен и готов к работе...")
-    # timeout и interval снижают шанс словить конфликт при кратковряменных обрывах связи
-    bot.infinity_polling(timeout=20, long_polling_timeout=5)
+    RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+
+    if RENDER_EXTERNAL_URL:
+        bot.remove_webhook()
+        bot.set_webhook(url=f"{RENDER_EXTERNAL_URL}/{TOKEN}")
+
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
